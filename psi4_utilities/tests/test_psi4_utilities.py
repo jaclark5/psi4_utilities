@@ -1,5 +1,5 @@
 """
-Unit and regression test for the emp package.
+Unit and regression test for the psi4_utilities package.
 """
 
 # Import package, test suite, and other packages as needed
@@ -7,9 +7,9 @@ import sys
 
 import pytest
 
-import emp
+import psi4_utilities
 
 
-def test_emp_imported():
+def test_psi4_utilities_imported():
     """Sample test, will always pass so long as import statement worked."""
-    assert "emp" in sys.modules
+    assert "psi4_utilities" in sys.modules

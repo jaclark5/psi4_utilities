@@ -6,4 +6,4 @@ You might choose to write an overview tutorial or set of tutorials.
 
 .. code-block:: python
     
-    import emp
+    import psi4_utilities

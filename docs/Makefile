@@ -4,7 +4,7 @@
 # You can set these variables from the command line.
 SPHINXOPTS    =
 SPHINXBUILD   = sphinx-build
-SPHINXPROJ    = emp
+SPHINXPROJ    = psi4_utilities
 SOURCEDIR     = .
 BUILDDIR      = _build
 

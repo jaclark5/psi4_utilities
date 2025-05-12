@@ -1,9 +1,9 @@
-.. emp documentation master file, created by
+.. psi4_utilities documentation master file, created by
    sphinx-quickstart on Thu Mar 15 13:55:56 2018.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to Estimate Memory from Psi4's documentation!
+Welcome to Psi4 Utilities's documentation!
 =========================================================
 
 .. grid:: 1 1 2 2
@@ -11,7 +11,7 @@ Welcome to Estimate Memory from Psi4's documentation!
     .. grid-item-card:: Getting Started
       :margin: 0 3 0 0
       
-      Learn the basics of using Estimate Memory from Psi4.
+      Learn the basics of using Psi4 Utilities.
 
       .. button-link:: ./getting_started.html
          :color: primary
@@ -39,7 +39,7 @@ Welcome to Estimate Memory from Psi4's documentation!
     .. grid-item-card:: API Reference
       :margin: 0 3 0 0
       
-      How to use the API of Estimate Memory from Psi4.
+      How to use the API of Psi4 Utilities.
 
       .. button-link:: ./api.html
          :color: primary
@@ -53,7 +53,7 @@ Welcome to Estimate Memory from Psi4's documentation!
     .. grid-item-card::  Developer Guide
       :margin: 0 3 0 0
       
-      How to contribute to Estimate Memory from Psi4.
+      How to contribute to Psi4 Utilities.
 
       .. button-link:: ./developer_guide.html
          :color: primary

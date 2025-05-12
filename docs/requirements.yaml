@@ -1,4 +1,4 @@
-name: docs_Estimate Memory from Psi4
+name: docs_Psi4 Utilities
 channels:
 
   - conda-forge

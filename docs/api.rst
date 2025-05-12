@@ -4,4 +4,4 @@ API Documentation
 .. autosummary::
    :toctree: autosummary
 
-   emp.canvas
+   psi4_utilities.canvas

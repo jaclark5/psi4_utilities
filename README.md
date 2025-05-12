@@ -1,8 +1,8 @@
-Estimate Memory from Psi4
+Psi4 Utilities
 ==============================
 [//]: # (Badges)
-[![GitHub Actions Build Status](https://github.com/REPLACE_WITH_OWNER_ACCOUNT/emp/workflows/CI/badge.svg)](https://github.com/REPLACE_WITH_OWNER_ACCOUNT/emp/actions?query=workflow%3ACI)
-[![codecov](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/Estimate Memory from Psi4/branch/main/graph/badge.svg)](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/Estimate Memory from Psi4/branch/main)
+[![GitHub Actions Build Status](https://github.com/REPLACE_WITH_OWNER_ACCOUNT/psi4_utilities/workflows/CI/badge.svg)](https://github.com/REPLACE_WITH_OWNER_ACCOUNT/psi4_utilities/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/Psi4 Utilities/branch/main/graph/badge.svg)](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/Psi4 Utilities/branch/main)
 
 
 Estimate the memory needed for a psi4 calculation

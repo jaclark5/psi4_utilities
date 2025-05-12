@@ -1,4 +1,4 @@
 Developer Guide
 ===============
 
-This page details how to contribute to Estimate Memory from Psi4. 
+This page details how to contribute to Psi4 Utilities. 
