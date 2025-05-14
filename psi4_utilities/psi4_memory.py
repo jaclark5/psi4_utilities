@@ -190,21 +190,19 @@ def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None
     # Prepare molecule and settings
     psi4.set_options({
         "basis": basis,
-        "reference": "rhf" if mol.multiplicity() == 1 else "uhf",
+        "reference": "rhf" if mol.multiplicity() == 1 else 'rohf',
     })
 
     if use_wfn:
         # Run HF to get orbitals and wavefunction
         _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True, frozen_core=frozen_core)
         nbasis = wfn.basisset().nbf()
-        if wfn.reference_wavefunction() == "RHF":
+        if mol.multiplicity() == 1: # RHF
             nocc = wfn.nalpha()
             nvirt = wfn.nmo() - nocc
-        elif wfn.reference_wavefunction() == "UHF":
-            nocc = wfn.nalpha() + wfn.nbeta()
-            nvirt = 2 * wfn.nmo() - nocc
-        else:
-            raise ValueError("Unsupported reference wavefunction type.")
+        else: # rohf for transition metals to avoid spin contamination 
+            nocc = wfn.nalpha()
+            nvirt = wfn.nmo() - nocc
     else:
         # Avoid calculating the wavefunction, estimate from molecule and basis
         basisset = psi4.core.BasisSet.build(mol, "BASIS", basis, puream=0)
@@ -212,9 +210,15 @@ def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None
         
         nelectrons = sum(mol.Z(ii) for ii in range(mol.natom()))
         nelectrons -= int(mol.molecular_charge())
-        nocc = nelectrons // 2  # Number of occupied orbitals
-
-        nvirt = 2 * nbasis - nocc if mol.multiplicity() != 1 else nbasis - nocc
+        nsocc = mol.multiplicity() - 1
+        nalpha = (nelectrons + nsocc) // 2
+        
+        if nsocc == 0: # RHF
+            nocc = nelectrons // 2
+            nvirt = nbasis - nocc # Assume nmo = nbasis
+        else: # Only consider ROHF
+            nocc = nalpha
+            nvirt = nbasis - nalpha # Assume nmo = nbasis
 
     return {
         "nbasis": nbasis,
@@ -285,23 +289,23 @@ def memory_from_psi4(
         max_memory = max(fock_memory, integral_memory)
     elif method.lower() in ['mp2', 'df-mp2', 'conv-mp2', 'sos-mp2', 'scs-mp2']:
         # Memory for MP2 amplitudes (O²V² scaling)
-        amp_memory = orbital_counts["nocc_corr"]**2 * orbital_counts["nvirt"]**2 * 8  # MP2 amplitudes (O²V² scaling)
+        amp_memory = orbital_counts["nocc"]**2 * orbital_counts["nvirt"]**2 * 8  # MP2 amplitudes (O²V² scaling)
         integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=aux_info["naux"])
         max_memory = max(amp_memory, integral_memory)
     elif method.lower() in ['mp3', 'sos-mp3', 'scs-mp3']:
         # Memory for MP3 amplitudes (O³V³ scaling)
-        amp_memory = orbital_counts["nocc_corr"]**3 * orbital_counts["nvirt"]**3 * 8
+        amp_memory = orbital_counts["nocc"]**3 * orbital_counts["nvirt"]**3 * 8
         integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=aux_info["naux"])
         max_memory = max(amp_memory, integral_memory)
     elif method.lower() in ['omp2']:
         # Memory for OMP2 amplitudes (O²V² scaling) + orbital optimization
-        amp_memory = orbital_counts["nocc_corr"]**2 * orbital_counts["nvirt"]**2 * 8
+        amp_memory = orbital_counts["nocc"]**2 * orbital_counts["nvirt"]**2 * 8
         integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=aux_info["naux"])
         orbital_grad_memory = orbital_counts["nbasis"]**2 * 8  # Orbital gradients and Hessians
         max_memory = np.max([amp_memory, integral_memory, orbital_grad_memory])
     elif method.lower() in ['ccsd', 'ccsd(t)', 'cc3', 'qcisd', 'cc2', 'bccd', 'qcisd(t)']:
         # Memory for CCSD amplitudes (O²V⁴ scaling)
-        amp_memory = orbital_counts["nocc_corr"]**2 * orbital_counts["nvirt"]**4 * 8
+        amp_memory = orbital_counts["nocc"]**2 * orbital_counts["nvirt"]**4 * 8
         integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=scf_type, naux=aux_info["naux"])
         max_memory = max(amp_memory, integral_memory)
     else:
