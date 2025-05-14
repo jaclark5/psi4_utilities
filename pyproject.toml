@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "versioningit~=2.0"]
+requires = ["setuptools>=61.0", "versioningit~=2.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 # Self-descriptive entries which should always be present
@@ -20,9 +20,12 @@ classifiers = [
 ]
 requires-python = ">=3.8"
 # Declare any run-time dependencies that should be installed with the package.
-#dependencies = [
+dependencies = [
 #    "importlib-resources;python_version<'3.10'",
-#]
+    "numpy",
+    "psi4"
+    "basis_set_exchange",
+]
 
 # Update the urls once the hosting is set up.
 #[project.urls]

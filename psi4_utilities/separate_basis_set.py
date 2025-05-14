@@ -117,7 +117,6 @@ def form_basis_set_file(basis_set_dict):
                     file_data.append(f"{coefficient:>15.7f}{exponent:>23.7f}        ")
                 else:
                     int1, int2 = 15 + (8 - lx), 23 - (8 - lx)
-                    print(int1, int2)
                     file_data.append(f"{coefficient:>{int1}.7f}{exponent:>{int2}.7f}        ")
         file_data.append("****")
     return "\n".join(file_data)

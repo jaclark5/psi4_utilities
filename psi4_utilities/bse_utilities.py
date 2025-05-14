@@ -5,7 +5,9 @@ import basis_set_exchange as bse
 def find_aux_sets(orbital_basis_prefix):
     orbital_basis_prefix = orbital_basis_prefix.lower()
     all_bases = bse.get_all_basis_names()
-    print(all_bases)
+    basis_sets = [name for name in all_bases if orbital_basis_prefix in name.lower()]
+    print(basis_sets)
+    print([[tag.lower() in name.lower() for tag in ['jkfit', 'mp2fit', 'ri', 'cabs']] for name in basis_sets])
     matched_aux_sets = [name for name in all_bases if orbital_basis_prefix in name.lower() and any(tag.lower() in name.lower() for tag in ['jkfit', 'mp2fit', 'ri', 'cabs'])]
     return matched_aux_sets
 
