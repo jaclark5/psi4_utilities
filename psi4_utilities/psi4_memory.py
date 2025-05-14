@@ -1,9 +1,9 @@
 import psi4
 import numpy as np
 
-from psi4_utilities import bse_utilities
+psi4.core.be_quiet()
 
-_dft_methods = [
+_DFT_METHODS = [
     'b2plyp', 'b2plyp-d', 'b2plyp-d3', 'b2plyp-d3bj', 'b3lyp', 
     'b3lyp-chg', 'b3lyp-d', 'b3lyp-d1', 'b3lyp-d3', 'b3lyp-d3bj', 
     'b3_x', 'b88_x', 'b97-0', 'b97-1', 'b97-2', 
@@ -23,8 +23,91 @@ _dft_methods = [
     'wb97x-2(lp)', 'wb97x-2(tqz)', 'wb97x-d', 'wblyp', 'wpbe', 
     'wpbe0', 'wpbe_x', 'wpbesol', 'wpbesol0', 'wpbesol_x', 
     'wsvwn', 'ws_x',
-    'pbeh-3c', 'b97-3c', 'r2scan-3c', 'wB97X-3c',
+    'pbeh-3c', 'b97-3c', 'r2scan-3c', 'wb97x-3c',
 ]
+_SCF_METHODS = ['scf', 'dft', "hf", 'hf-3c'] + _DFT_METHODS
+_CC_METHODS = ['ccsd', 'ccsd(t)', 'cc3', 'qcisd', 'cc2', 'bccd', 'qcisd(t)']
+_MP_METHODS = ['mp2', 'df-mp2', 'conv-mp2', 'sos-mp2', 'scs-mp2', 'omp2', 'mp3', 'sos-mp3', 'scs-mp3']
+
+
+def get_calculation_type(method):
+    """Return the general calculation type (i.e., CC, MP, or SCF) based on the energy method.
+
+    Args:
+        method (str): Psi4 energy method
+
+    Returns:
+        str: Energy method type, either SCF, CC, or MP
+    """
+    if method.lower() in _SCF_METHODS:
+        return "SCF"
+    elif method.lower() in _MP_METHODS:
+        return "MP2"
+    elif method.lower() in _CC_METHODS:
+        return "CC"
+    else:
+        raise ValueError(f"The method, {method}, is not recognized. Consider adding this option to `get_calculation_type`")
+
+
+def get_auxiliary_basis_size(molecule, primary_basis, method_type=None, method=None, aux_basis_name=None):
+    """
+    Get the number of auxiliary basis functions for a given molecule, primary basis, and method.
+    
+    Parameters:
+    -----------
+    molecule (psi4.core.Molecule): The molecule object
+    primary_basis (str): Name of the primary basis set
+    method_type (str, optional): Type of method (e.g., 'DF', 'CD', etc.). If None, will use the Psi4 default
+    method (str, optional): Name of the method (e.g., 'SCF', 'B3LYP', 'MP2', 'MP3', 'OMP2', 'CCSD')
+    aux_basis_name (str): Name of auxiliary basis set
+    
+    Returns:
+    --------
+    dict
+        Dictionary containing number of auxiliary basis functions and basis set details
+    """
+    result = {}
+
+    calculation_type = get_calculation_type(method)
+    result["calculation_type"] = calculation_type
+    
+    # If no method_type is specified, check Psi4's current options
+    if method_type is None:
+        option_name = calculation_type + "_TYPE"
+        method_type = psi4.core.get_option(calculation_type, option_name)
+    
+    # Determine key and fitrole based on calculation type and method
+    if method_type.upper() in ['DF', 'DENSITY_FITTED']:
+        if calculation_type.upper() == 'SCF':
+            key = "DF_BASIS_SCF"
+            fitrole = "JKFIT"
+        elif calculation_type.upper() == 'MP':
+            key = "DF_BASIS_MP2"
+            fitrole = "RIFIT"
+        elif calculation_type.upper() == 'CC':
+            key = "DF_BASIS_CC"
+            fitrole = "RIFIT"
+        else:
+            key = "DF_BASIS_SCF"  # Default to SCF for unknown types
+            fitrole = "JKFIT"
+    else:
+        result["naux"] = 0
+        result["aux_basis_used"] = "None"
+        return result
+   
+    if aux_basis_name is None:
+        aux_basis_obj = psi4.core.BasisSet.build(molecule, key, "", fitrole, primary_basis)
+        aux_basis_name = aux_basis_obj.name()
+    else:
+        aux_basis_obj = psi4.core.BasisSet.build(molecule, key, aux_basis_name)
+    
+    # Get the number of auxiliary basis functions
+    result["naux"] = aux_basis_obj.nbf()
+    result["aux_basis_used"] = aux_basis_name
+    result["key_used"] = key
+    result["fitrole_used"] = fitrole
+    
+    return result
 
 
 def get_integral_memory(nbasis, int_type="df", naux=None):
@@ -81,7 +164,7 @@ def get_integral_memory(nbasis, int_type="df", naux=None):
     return integral_memory
 
 
-def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None, mp2_type: str = None, frozen_core: bool = True):
+def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None, mp2_type: str = None, cc_type: str = None, frozen_core: bool = True, use_wfn: bool = False):
     """Computes and returns the number of molecular orbitals (MOs), alpha and beta electrons,
     frozen core orbitals, total occupied orbitals, correlated occupied orbitals, and virtual orbitals
     for a given molecule and basis set, with options for frozen core and MP2 type.
@@ -91,16 +174,15 @@ def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None
         basis (str): The basis set to use for the calculation (e.g., 'cc-pVDZ').
         scf_type (str, optional): SCF type (e.g., 'df'). Defaults to None.
         mp2_type (str, optional): MP2 type (e.g., 'df'). Defaults to None.
+        cc_type (str, optional): CC type (e.g., 'df'). Defaults to None.
         frozen_core (bool, optional): Whether to freeze core orbitals in post-HF calculations. Defaults to True.
+        use_wfn (bool, optional): Choose whether to use the wave function or not
 
     Returns:
         dict: A dictionary containing:
-            - "nmo" (int): Total number of molecular orbitals.
-            - "nalpha" (int): Number of alpha electrons.
-            - "nbeta" (int): Number of beta electrons.
-            - "ncore" (int): Number of frozen core orbitals.
-            - "nocc_total" (int): Total number of occupied orbitals.
-            - "nocc_corr" (int): Number of correlated (non-core) occupied orbitals.
+
+            - "nbasis" (int): Total number of basis functions.
+            - "nocc" (int): Number of correlated (non-core) occupied orbitals.
             - "nvirt" (int): Number of virtual orbitals.
 
     """
@@ -108,38 +190,36 @@ def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None
     # Prepare molecule and settings
     psi4.set_options({
         "basis": basis,
-        "scf_type": scf_type,
-        "mp2_type": mp2_type,
         "reference": "rhf" if mol.multiplicity() == 1 else "uhf",
     })
 
-    # Run HF to get orbitals
-    _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True, frozen_core=frozen_core)
-
-    nbasis = wfn.basisset().nbf()
-    if wfn.reference_wavefunction() == "RHF":
-        nocc = wfn.nalpha()
-        nvirt = wfn.nmo() - nocc
-    elif wfn.reference_wavefunction() == "UHF":
-        nocc = wfn.nalpha() + wfn.nbeta()
-        nvirt = 2 * wfn.nmo() - nocc
+    if use_wfn:
+        # Run HF to get orbitals and wavefunction
+        _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True, frozen_core=frozen_core)
+        nbasis = wfn.basisset().nbf()
+        if wfn.reference_wavefunction() == "RHF":
+            nocc = wfn.nalpha()
+            nvirt = wfn.nmo() - nocc
+        elif wfn.reference_wavefunction() == "UHF":
+            nocc = wfn.nalpha() + wfn.nbeta()
+            nvirt = 2 * wfn.nmo() - nocc
+        else:
+            raise ValueError("Unsupported reference wavefunction type.")
     else:
-        raise ValueError("Unsupported reference wavefunction type.")
-    
-    # Access auxiliary basis set directly
-    aux_basis_name = psi4.get_option("SCF", "DF_BASIS_SCF") if psi4.has_option("SCF", "DF_BASIS_SCF") else None
-    if aux_basis_name is None:
-        # Try to guess auxiliary basis name from basis
-        aux_basis_name = bse_utilities.guess_aux_basis(basis)
-    aux_basis = psi4.core.BasisSet.build(mol, "DF_BASIS_SCF", aux_basis_name, wfn.basisset())
-    naux = aux_basis.nbf()
+        # Avoid calculating the wavefunction, estimate from molecule and basis
+        basisset = psi4.core.BasisSet.build(mol, "BASIS", basis, puream=0)
+        nbasis = basisset.nbf()
+        
+        nelectrons = sum(mol.Z(ii) for ii in range(mol.natom()))
+        nelectrons -= int(mol.molecular_charge())
+        nocc = nelectrons // 2  # Number of occupied orbitals
+
+        nvirt = 2 * nbasis - nocc if mol.multiplicity() != 1 else nbasis - nocc
 
     return {
         "nbasis": nbasis,
         "nocc": nocc,
         "nvirt": nvirt,
-        "naux": naux,
-        "aux_basis": aux_basis,
     }
 
 
@@ -149,8 +229,9 @@ def memory_from_psi4(
     basis=None,
     scf_type=None,
     mp2_type=None,
+    cc_type=None,
     frozen_core=False,
-    aux_type=None,
+    use_wfn=False,
     ):
     """Calculate the maximum memory required for a Psi4 calculation.
 
@@ -160,13 +241,14 @@ def memory_from_psi4(
         basis (_type_, optional): Basis set name. Defaults to None.
         scf_type (str, optional): SCF type (e.g., 'df'). Defaults to None.
         mp2_type (str, optional): MP2 type (e.g., 'df'). Defaults to None.
+        cc_type (str, optional): CC type (e.g., 'df'). Defaults to None.
         frozen_core (bool, optional): (For Psi4 1.10) Specifies how many core orbitals to freeze in correlated computations. 
         TRUE or 1 will default to freezing the previous noble gas shell on each atom. In case of positive charges
         on fragments, an additional shell may be unfrozen, to ensure there are valence electrons in each fragment.
         With FALSE or 0, no electrons are frozen (with the exception of electrons treated by an ECP). With -1, -2,
         and -3, the user might request strict freezing of the previous first/second/third noble gas shell on every
         atom. In this case, when there are no valence electrons, the code raises an exception. Defaults to False.
-        aux_type (str, optional): Auxiliary basis type, e.g., RIFIT. Defaults to None.
+        use_wfn (bool, optional): Choose whether to use the wave function or not
 
     Returns:
         float: Estimated memory in GB.
@@ -176,39 +258,51 @@ def memory_from_psi4(
     if basis is None:
         raise ValueError("No basis set was provided.")
 
+    psi4_mol = psi4.geometry(qce_mol.to_string(dtype='psi4'))
     orbital_counts = get_orbital_counts(
-        psi4.geometry(qce_mol.to_string(dtype='psi4')),
+        psi4_mol,
         basis, 
         scf_type=scf_type,
         mp2_type=mp2_type,
-        frozen_core=frozen_core
+        cc_type=cc_type,
+        frozen_core=frozen_core,
+        use_wfn=use_wfn,
+    )
+    
+    method_type = scf_type if scf_type is not None else mp2_type
+    method_type = method_type if method_type is not None else cc_type
+    aux_info = get_auxiliary_basis_size(
+        psi4_mol, 
+        basis, 
+        method_type=None, 
+        method=method,
     )
             
-    if method.lower() in ['scf', 'dft', 'hf-3c',] + _dft_methods:
+    if method.lower() in _SCF_METHODS:
         # Memory for Fock matrix and density matrix (nmo² scaling)
         fock_memory = orbital_counts["nbasis"]**2 * 8
-        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=scf_type, naux=orbital_counts["naux"])
+        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=scf_type, naux=aux_info["naux"])
         max_memory = max(fock_memory, integral_memory)
     elif method.lower() in ['mp2', 'df-mp2', 'conv-mp2', 'sos-mp2', 'scs-mp2']:
         # Memory for MP2 amplitudes (O²V² scaling)
         amp_memory = orbital_counts["nocc_corr"]**2 * orbital_counts["nvirt"]**2 * 8  # MP2 amplitudes (O²V² scaling)
-        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=orbital_counts["naux"])
+        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=aux_info["naux"])
         max_memory = max(amp_memory, integral_memory)
     elif method.lower() in ['mp3', 'sos-mp3', 'scs-mp3']:
         # Memory for MP3 amplitudes (O³V³ scaling)
         amp_memory = orbital_counts["nocc_corr"]**3 * orbital_counts["nvirt"]**3 * 8
-        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=orbital_counts["naux"])
+        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=aux_info["naux"])
         max_memory = max(amp_memory, integral_memory)
     elif method.lower() in ['omp2']:
         # Memory for OMP2 amplitudes (O²V² scaling) + orbital optimization
         amp_memory = orbital_counts["nocc_corr"]**2 * orbital_counts["nvirt"]**2 * 8
-        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=orbital_counts["naux"])
+        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=mp2_type, naux=aux_info["naux"])
         orbital_grad_memory = orbital_counts["nbasis"]**2 * 8  # Orbital gradients and Hessians
         max_memory = np.max([amp_memory, integral_memory, orbital_grad_memory])
     elif method.lower() in ['ccsd', 'ccsd(t)', 'cc3', 'qcisd', 'cc2', 'bccd', 'qcisd(t)']:
         # Memory for CCSD amplitudes (O²V⁴ scaling)
         amp_memory = orbital_counts["nocc_corr"]**2 * orbital_counts["nvirt"]**4 * 8
-        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=scf_type, naux=orbital_counts["naux"])
+        integral_memory = get_integral_memory(orbital_counts["nbasis"], int_type=scf_type, naux=aux_info["naux"])
         max_memory = max(amp_memory, integral_memory)
     else:
         raise ValueError(f"Unsupported method '{method}'.")
