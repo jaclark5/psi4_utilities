@@ -5,7 +5,7 @@ Psi4 Utilities
 [![codecov](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/Psi4 Utilities/branch/main/graph/badge.svg)](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/Psi4 Utilities/branch/main)
 
 
-Estimate the memory needed for a psi4 calculation
+Utilities for psi4 such as memory estimation and splitting basis sets
 
 ### Copyright
 
