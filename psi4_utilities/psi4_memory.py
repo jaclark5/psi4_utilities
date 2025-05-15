@@ -31,7 +31,7 @@ _DFT_METHODS = [
 ]
 _SCF_METHODS = ['scf', 'dft', "hf", 'hf3c', 'hf-3c'] + _DFT_METHODS
 _CC_METHODS = ['ccsd', 'ccsd(t)', 'cc3', 'qcisd', 'cc2', 'bccd', 'qcisd(t)']
-_MP_METHODS = ['mp2', 'df-mp2', 'conv-mp2', 'sos-mp2', 'scs-mp2', 'omp2', 'mp3', 'sos-mp3', 'scs-mp3']
+_MP2_METHODS = ['mp2', 'df-mp2', 'conv-mp2', 'sos-mp2', 'scs-mp2', 'omp2', 'mp3', 'sos-mp3', 'scs-mp3']
 
 
 def get_calculation_type(method):
@@ -41,11 +41,11 @@ def get_calculation_type(method):
         method (str): Psi4 energy method
 
     Returns:
-        str: Energy method type, either SCF, CC, or MP
+        str: Energy method type, either SCF, CC, or MP2
     """
     if method.lower() in _SCF_METHODS:
         return "SCF"
-    elif method.lower() in _MP_METHODS:
+    elif method.lower() in _MP2_METHODS:
         return "MP2"
     elif method.lower() in _CC_METHODS:
         return "CC"
@@ -85,7 +85,7 @@ def get_auxiliary_basis_size(molecule, primary_basis, method_type=None, method=N
         if calculation_type.upper() == 'SCF':
             key = "DF_BASIS_SCF"
             fitrole = "JKFIT"
-        elif calculation_type.upper() == 'MP':
+        elif calculation_type.upper() == 'MP2':
             key = "DF_BASIS_MP2"
             fitrole = "RIFIT"
         elif calculation_type.upper() == 'CC':
