@@ -1,3 +1,10 @@
+"""This module will split a basis set into the base and augmented parts.
+
+The full and base basis sets must be available in basis set exchange.
+
+Note that the script ``psi4/share/psi4/basis/primitives/diff_gbs.py`` can be used to compare two .gbs files more effectively.
+"""
+
 import os
 import sys
 from collections import defaultdict
