@@ -1,3 +1,7 @@
+import warnings
+import io
+import contextlib
+
 import psi4
 import numpy as np
 
@@ -23,9 +27,9 @@ _DFT_METHODS = [
     'wb97x-2(lp)', 'wb97x-2(tqz)', 'wb97x-d', 'wblyp', 'wpbe', 
     'wpbe0', 'wpbe_x', 'wpbesol', 'wpbesol0', 'wpbesol_x', 
     'wsvwn', 'ws_x',
-    'pbeh-3c', 'b97-3c', 'r2scan-3c', 'wb97x-3c',
+    'pbeh3c', 'b973c', 'r2scan3c', 'wb97x3c',
 ]
-_SCF_METHODS = ['scf', 'dft', "hf", 'hf-3c'] + _DFT_METHODS
+_SCF_METHODS = ['scf', 'dft', "hf", 'hf3c'] + _DFT_METHODS
 _CC_METHODS = ['ccsd', 'ccsd(t)', 'cc3', 'qcisd', 'cc2', 'bccd', 'qcisd(t)']
 _MP_METHODS = ['mp2', 'df-mp2', 'conv-mp2', 'sos-mp2', 'scs-mp2', 'omp2', 'mp3', 'sos-mp3', 'scs-mp3']
 
@@ -164,7 +168,7 @@ def get_integral_memory(nbasis, int_type="df", naux=None):
     return integral_memory
 
 
-def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None, mp2_type: str = None, cc_type: str = None, frozen_core: bool = True, use_wfn: bool = False):
+def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool = True,  use_wfn: bool = False, method: str = None, ):
     """Computes and returns the number of molecular orbitals (MOs), alpha and beta electrons,
     frozen core orbitals, total occupied orbitals, correlated occupied orbitals, and virtual orbitals
     for a given molecule and basis set, with options for frozen core and MP2 type.
@@ -172,11 +176,9 @@ def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None
     Args:
         mol (psi4.core.Molecule): The Psi4 molecule object for which orbital counts are to be determined.
         basis (str): The basis set to use for the calculation (e.g., 'cc-pVDZ').
-        scf_type (str, optional): SCF type (e.g., 'df'). Defaults to None.
-        mp2_type (str, optional): MP2 type (e.g., 'df'). Defaults to None.
-        cc_type (str, optional): CC type (e.g., 'df'). Defaults to None.
         frozen_core (bool, optional): Whether to freeze core orbitals in post-HF calculations. Defaults to True.
         use_wfn (bool, optional): Choose whether to use the wave function or not
+        method (str, optional): Method used to classify the calculation type. Defaults to None
 
     Returns:
         dict: A dictionary containing:
@@ -187,15 +189,38 @@ def get_orbital_counts(mol: psi4.core.Molecule, basis: str, scf_type: str = None
 
     """
 
-    # Prepare molecule and settings
-    psi4.set_options({
-        "basis": basis,
-        "reference": "rhf" if mol.multiplicity() == 1 else 'rohf',
-    })
+    calc_type = get_calculation_type(method)
+    if calc_type == "CC" or calc_type == "MP2" or method.lower() not in _DFT_METHODS:
+        options = {"reference": "rhf" if mol.multiplicity() == 1 else "rohf"}
+    else: # DFT Method
+        options = {"reference": "rks" if mol.multiplicity() == 1 else "uks"}
+
+    flag_3c = method[-2:].lower() == "3c"
+    if not flag_3c:
+        options.update({"basis": basis})
+    else:
+        if not use_wfn:
+            warnings.warn("WFN must be used for estimating memory of *3c energy method.")
+            use_wfn = True
+    psi4.set_options(options)
+
 
     if use_wfn:
         # Run HF to get orbitals and wavefunction
-        _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True, frozen_core=frozen_core)
+        psi_output = io.StringIO()
+        with contextlib.redirect_stdout(psi_output), contextlib.redirect_stderr(psi_output):
+            try:
+                if not flag_3c:
+                    _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True, frozen_core=frozen_core)
+                else:
+                    _, wfn = psi4.energy(method, molecule=mol, return_wfn=True, frozen_core=frozen_core)
+            except Exception as e:
+                output = psi_output.getvalue()
+                raise RuntimeError(f"Psi4 calculation failed: {output}") from e
+        output = psi_output.getvalue()
+        if "Traceback" in output or "PsiException" in output or "Fatal Error" in output:
+            raise RuntimeError(f"Psi4 calculation error detected:\n{output}")
+        
         nbasis = wfn.basisset().nbf()
         if mol.multiplicity() == 1: # RHF
             nocc = wfn.nalpha()
@@ -236,6 +261,7 @@ def memory_from_psi4(
     cc_type=None,
     frozen_core=False,
     use_wfn=False,
+    return_counts=False,
     ):
     """Calculate the maximum memory required for a Psi4 calculation.
 
@@ -253,34 +279,37 @@ def memory_from_psi4(
         and -3, the user might request strict freezing of the previous first/second/third noble gas shell on every
         atom. In this case, when there are no valence electrons, the code raises an exception. Defaults to False.
         use_wfn (bool, optional): Choose whether to use the wave function or not
+        return_counts (bool, optional): If True, in addition to the memory usage, a dictionary of basis sets will be provided.
 
     Returns:
         float: Estimated memory in GB.
     """
-    if method[:-3].lower() == "3c":
-        basis = psi4.driver.proc_table[method].get('default_basis', None)
-    if basis is None:
+    
+    flag_3c = True if method[-2:].lower() == "3c" else False
+    if not flag_3c and (basis is None or basis == "None"):
         raise ValueError("No basis set was provided.")
 
     psi4_mol = psi4.geometry(qce_mol.to_string(dtype='psi4'))
     orbital_counts = get_orbital_counts(
         psi4_mol,
-        basis, 
-        scf_type=scf_type,
-        mp2_type=mp2_type,
-        cc_type=cc_type,
+        basis,
         frozen_core=frozen_core,
         use_wfn=use_wfn,
+        method=method,
     )
     
     method_type = scf_type if scf_type is not None else mp2_type
     method_type = method_type if method_type is not None else cc_type
-    aux_info = get_auxiliary_basis_size(
-        psi4_mol, 
-        basis, 
-        method_type=None, 
-        method=method,
-    )
+    if flag_3c and method_type.upper() in ['DF', 'DENSITY_FITTED']:
+        warnings.warn("3c method do not apply density fitting.")
+        aux_info = {"naux": 0, "aux_basis_used": "None"}
+    else:
+        aux_info = get_auxiliary_basis_size(
+            psi4_mol, 
+            basis, 
+            method_type=None, 
+            method=method,
+        )
             
     if method.lower() in _SCF_METHODS:
         # Memory for Fock matrix and density matrix (nmo² scaling)
@@ -312,4 +341,8 @@ def memory_from_psi4(
         raise ValueError(f"Unsupported method '{method}'.")
 
     # Convert bytes to GB
-    return max_memory / (1024**2) / 1000
+    if return_counts:
+        orbital_counts.update(aux_info)
+        return max_memory / (1024**2) / 1000, orbital_counts
+    else:
+        return max_memory / (1024**2) / 1000
