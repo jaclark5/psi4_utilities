@@ -27,9 +27,9 @@ _DFT_METHODS = [
     'wb97x-2(lp)', 'wb97x-2(tqz)', 'wb97x-d', 'wblyp', 'wpbe', 
     'wpbe0', 'wpbe_x', 'wpbesol', 'wpbesol0', 'wpbesol_x', 
     'wsvwn', 'ws_x',
-    'pbeh3c', 'b973c', 'r2scan3c', 'wb97x3c',
+    'pbeh3c', 'b973c', 'r2scan3c', 'wb97x3c', 'pbeh-3c', 'b97-3c', 'r2scan-3c', 'wb97x-3c',
 ]
-_SCF_METHODS = ['scf', 'dft', "hf", 'hf3c'] + _DFT_METHODS
+_SCF_METHODS = ['scf', 'dft', "hf", 'hf3c', 'hf-3c'] + _DFT_METHODS
 _CC_METHODS = ['ccsd', 'ccsd(t)', 'cc3', 'qcisd', 'cc2', 'bccd', 'qcisd(t)']
 _MP_METHODS = ['mp2', 'df-mp2', 'conv-mp2', 'sos-mp2', 'scs-mp2', 'omp2', 'mp3', 'sos-mp3', 'scs-mp3']
 
@@ -202,6 +202,8 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
         if not use_wfn:
             warnings.warn("WFN must be used for estimating memory of *3c energy method.")
             use_wfn = True
+            
+    psi4.core.clean_options()
     psi4.set_options(options)
 
 
@@ -213,6 +215,7 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
                 if not flag_3c:
                     _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True, frozen_core=frozen_core)
                 else:
+                    print("!!!!!!!!!!! 3c method !!!!!!!!!!!")
                     _, wfn = psi4.energy(method, molecule=mol, return_wfn=True, frozen_core=frozen_core)
             except Exception as e:
                 output = psi_output.getvalue()
