@@ -191,9 +191,10 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
 
     calc_type = get_calculation_type(method)
     if calc_type == "CC" or calc_type == "MP2" or method.lower() not in _DFT_METHODS:
-        options = {"reference": "rhf" if mol.multiplicity() == 1 else "rohf"}
+        reference = "rhf" if mol.multiplicity() == 1 else "rohf"
     else: # DFT Method
-        options = {"reference": "rks" if mol.multiplicity() == 1 else "uks"}
+        reference = "rks" if mol.multiplicity() == 1 else "uks"
+    options = {"reference": reference}
 
     flag_3c = method[-2:].lower() == "3c"
     if not flag_3c:
@@ -215,7 +216,6 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
                 if not flag_3c:
                     _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True, frozen_core=frozen_core)
                 else:
-                    print("!!!!!!!!!!! 3c method !!!!!!!!!!!")
                     _, wfn = psi4.energy(method, molecule=mol, return_wfn=True, frozen_core=frozen_core)
             except Exception as e:
                 output = psi_output.getvalue()
@@ -232,8 +232,13 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
             nocc = wfn.nalpha()
             nvirt = wfn.nmo() - nocc
     else:
-        # Avoid calculating the wavefunction, estimate from molecule and basis
-        basisset = psi4.core.BasisSet.build(mol, "BASIS", basis, puream=0)
+        if reference in ["rks", "uks"]:
+            basisset = psi4.core.BasisSet.build(mol, "ORBITAL", basis, puream=psi4.core.get_global_option("PUREAM"))
+        elif reference in ["rhf", "uhf", "rohf"]:
+            basisset = psi4.core.BasisSet.build(mol, "BASIS", basis, puream=psi4.core.get_global_option("PUREAM"))
+        else:
+            # Default to "BASIS" if unknown reference
+            basisset = psi4.core.BasisSet.build(mol, "BASIS", basis, puream=psi4.core.get_global_option("PUREAM"))
         nbasis = basisset.nbf()
         
         nelectrons = sum(mol.Z(ii) for ii in range(mol.natom()))
