@@ -1,9 +1,10 @@
 import warnings
-import io
-import contextlib
+import os
+import glob
 
-import psi4
 import numpy as np
+from qcelemental.models import Molecule
+import psi4
 
 psi4.core.be_quiet()
 
@@ -168,7 +169,31 @@ def get_integral_memory(nbasis, int_type="df", naux=None):
     return integral_memory
 
 
-def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool = True,  use_wfn: bool = False, method: str = None, ):
+def estimate_freeze_core_orbitals(mol):
+    """Estimate the number of frozen core orbitals for a molecule."""
+    # Noble gas core electron counts (number of electrons to freeze)
+    noble_gas_cores = [
+        (2, 1),    # He: 1 core orbital (1s)
+        (10, 5),   # Ne: 5 core orbitals (1s, 2s, 2p)
+        (18, 9),   # Ar: 9 core orbitals (1s, 2s, 2p, 3s, 3p)
+        (36, 18),  # Kr: 18 core orbitals
+        (54, 27),  # Xe: 27 core orbitals
+        (86, 36),  # Rn: 36 core orbitals
+    ]
+    freeze_core_orbitals = 0
+    for i in range(mol.natom()):
+        Z = int(mol.Z(i))
+        core_orbs = 0
+        for ng_z, ng_orbs in noble_gas_cores:
+            if Z > ng_z:
+                core_orbs = ng_orbs
+            else:
+                break
+        freeze_core_orbitals += core_orbs
+    return freeze_core_orbitals
+
+
+def get_orbital_counts( mol: psi4.core.Molecule, basis: str, freeze_core: bool = True,  use_wfn: bool = False, method: str = None, ):
     """Computes and returns the number of molecular orbitals (MOs), alpha and beta electrons,
     frozen core orbitals, total occupied orbitals, correlated occupied orbitals, and virtual orbitals
     for a given molecule and basis set, with options for frozen core and MP2 type.
@@ -176,7 +201,8 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
     Args:
         mol (psi4.core.Molecule): The Psi4 molecule object for which orbital counts are to be determined.
         basis (str): The basis set to use for the calculation (e.g., 'cc-pVDZ').
-        frozen_core (bool, optional): Whether to freeze core orbitals in post-HF calculations. Defaults to True.
+        freeze_core (bool, optional): Whether to freeze core orbitals in post-HF calculations, does not affect
+        DFT or SCF methods. Defaults to True.
         use_wfn (bool, optional): Choose whether to use the wave function or not
         method (str, optional): Method used to classify the calculation type. Defaults to None
 
@@ -186,6 +212,7 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
             - "nbasis" (int): Total number of basis functions.
             - "nocc" (int): Number of correlated (non-core) occupied orbitals.
             - "nvirt" (int): Number of virtual orbitals.
+            - "stdout" (str): If use_wfn is True, output the psi4 output file
 
     """
 
@@ -194,7 +221,7 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
         reference = "rhf" if mol.multiplicity() == 1 else "rohf"
     else: # DFT Method
         reference = "rks" if mol.multiplicity() == 1 else "uks"
-    options = {"reference": reference}
+    options = {"reference": reference, "freeze_core": freeze_core, "PRINT": 3}  # add 'num_frozen_docc': 2?
 
     flag_3c = method[-2:].lower() == "3c"
     if not flag_3c:
@@ -207,31 +234,42 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
     psi4.core.clean_options()
     psi4.set_options(options)
 
-
     if use_wfn:
-        # Run HF to get orbitals and wavefunction
-        psi_output = io.StringIO()
-        with contextlib.redirect_stdout(psi_output), contextlib.redirect_stderr(psi_output):
-            try:
-                if not flag_3c:
-                    _, wfn = psi4.energy("scf", molecule=mol, return_wfn=True, frozen_core=frozen_core)
-                else:
-                    _, wfn = psi4.energy(method, molecule=mol, return_wfn=True, frozen_core=frozen_core)
-            except Exception as e:
-                output = psi_output.getvalue()
-                raise RuntimeError(f"Psi4 calculation failed: {output}") from e
-        output = psi_output.getvalue()
-        if "Traceback" in output or "PsiException" in output or "Fatal Error" in output:
-            raise RuntimeError(f"Psi4 calculation error detected:\n{output}")
-        
+        filename = "log.txt"
+        try:
+            psi4.core.set_output_file(filename, False)
+            _, wfn = psi4.energy(
+                "scf" if not flag_3c else method,
+                molecule=mol,
+                return_wfn=True,
+            )
+            # Read the captured output
+            with open(filename, 'r') as f:
+                output = f.read()
+            
+        except Exception as e:
+            # Read any output that was written before the error
+            with open(filename, 'r') as f:
+                output = f.read()
+            raise RuntimeError(f"Psi4 calculation failed: {output}") from e
+        finally:
+            # Clean up the temporary file
+            if os.path.exists(filename):
+                os.remove(filename)
+
         nbasis = wfn.basisset().nbf()
-        if mol.multiplicity() == 1: # RHF
-            nocc = wfn.nalpha()
+        ncore = wfn.nfrzc()
+        if reference in ["rks", "rhf", "rohf"]:
+            nocc = wfn.nalpha() - ncore
             nvirt = wfn.nmo() - nocc
-        else: # rohf for transition metals to avoid spin contamination 
-            nocc = wfn.nalpha()
-            nvirt = wfn.nmo() - nocc
+        elif reference in ["uks", "uhf"]:
+            nalpha = wfn.nalpha()
+            nbeta = wfn.nbeta()
+            nocc = nalpha + nbeta - ncore
+            nvirt = wfn.nmo() - max(nalpha, nbeta)
+            
     else:
+        output = None
         if reference in ["rks", "uks"]:
             basisset = psi4.core.BasisSet.build(mol, "ORBITAL", basis, puream=psi4.core.get_global_option("PUREAM"))
         elif reference in ["rhf", "uhf", "rohf"]:
@@ -239,55 +277,65 @@ def get_orbital_counts( mol: psi4.core.Molecule, basis: str, frozen_core: bool =
         else:
             # Default to "BASIS" if unknown reference
             basisset = psi4.core.BasisSet.build(mol, "BASIS", basis, puream=psi4.core.get_global_option("PUREAM"))
-        nbasis = basisset.nbf()
         
         nelectrons = sum(mol.Z(ii) for ii in range(mol.natom()))
         nelectrons -= int(mol.molecular_charge())
         nsocc = mol.multiplicity() - 1
         nalpha = (nelectrons + nsocc) // 2
         
-        if nsocc == 0: # RHF
-            nocc = nelectrons // 2
-            nvirt = nbasis - nocc # Assume nmo = nbasis
-        else: # Only consider ROHF
-            nocc = nalpha
-            nvirt = nbasis - nalpha # Assume nmo = nbasis
+        nbasis = basisset.nbf()
+        ncore = estimate_freeze_core_orbitals(mol) if freeze_core else 0
+        if reference in ["rks", "rhf", "rohf"]:
+            nocc = nalpha - ncore
+            nvirt = nbasis - nalpha
+        elif reference == "rohf":
+            nocc = nalpha - ncore
+            nvirt = nbasis - nalpha
+        elif reference in ["uks", "uhf"]:
+            nbeta = (nelectrons - nsocc) // 2
+            nocc = nalpha + nbeta - ncore
+            nvirt = nbasis - max(nalpha, nbeta)
+
+    # Remove temp files
+    temp_files = glob.glob("*.clean")
+    if temp_files:
+        for filename in temp_files:
+            os.remove(filename)
 
     return {
         "nbasis": nbasis,
         "nocc": nocc,
         "nvirt": nvirt,
+        "stdout": output,
     }
 
 
 def memory_from_psi4(
-    qce_mol,
+    mol,
     method="scf",
     basis=None,
-    scf_type=None,
-    mp2_type=None,
-    cc_type=None,
-    frozen_core=False,
+    scf_type="df",
+    mp2_type="df",
+    cc_type="df",
+    freeze_core=False,
     use_wfn=False,
-    return_counts=False,
     ):
     """Calculate the maximum memory required for a Psi4 calculation.
 
     Args:
-        qce_mol (qcelemental.models.Molecule): QCElemental molecule
+        mol (qcelemental.models.Molecule): Psi4 or QCElemental molecule
         method (str, optional): Energy method name, e.g., 'scf', 'mp2', 'ccsd', 'b3lyp'... Defaults to "scf".
         basis (_type_, optional): Basis set name. Defaults to None.
-        scf_type (str, optional): SCF type (e.g., 'df'). Defaults to None.
-        mp2_type (str, optional): MP2 type (e.g., 'df'). Defaults to None.
-        cc_type (str, optional): CC type (e.g., 'df'). Defaults to None.
-        frozen_core (bool, optional): (For Psi4 1.10) Specifies how many core orbitals to freeze in correlated computations. 
+        scf_type (str, optional): SCF type (e.g., 'df'). Defaults to "df".
+        mp2_type (str, optional): MP2 type (e.g., 'df'). Defaults to "df".
+        cc_type (str, optional): CC type (e.g., 'df'). Defaults to "df".
+        freeze_core (bool, optional): (For Psi4 1.10) Specifies how many core orbitals to freeze in correlated computations. 
         TRUE or 1 will default to freezing the previous noble gas shell on each atom. In case of positive charges
         on fragments, an additional shell may be unfrozen, to ensure there are valence electrons in each fragment.
         With FALSE or 0, no electrons are frozen (with the exception of electrons treated by an ECP). With -1, -2,
         and -3, the user might request strict freezing of the previous first/second/third noble gas shell on every
         atom. In this case, when there are no valence electrons, the code raises an exception. Defaults to False.
         use_wfn (bool, optional): Choose whether to use the wave function or not
-        return_counts (bool, optional): If True, in addition to the memory usage, a dictionary of basis sets will be provided.
 
     Returns:
         float: Estimated memory in GB.
@@ -297,11 +345,14 @@ def memory_from_psi4(
     if not flag_3c and (basis is None or basis == "None"):
         raise ValueError("No basis set was provided.")
 
-    psi4_mol = psi4.geometry(qce_mol.to_string(dtype='psi4'))
+    if isinstance(mol, Molecule):
+        psi4_mol = psi4.geometry(mol.to_string(dtype='psi4'))
+    else:
+        psi4_mol = mol
     orbital_counts = get_orbital_counts(
         psi4_mol,
         basis,
-        frozen_core=frozen_core,
+        freeze_core=freeze_core,
         use_wfn=use_wfn,
         method=method,
     )
@@ -349,8 +400,8 @@ def memory_from_psi4(
         raise ValueError(f"Unsupported method '{method}'.")
 
     # Convert bytes to GB
-    if return_counts:
-        orbital_counts.update(aux_info)
-        return max_memory / (1024**2) / 1000, orbital_counts
-    else:
-        return max_memory / (1024**2) / 1000
+    output = {"memory": max_memory / 1000**3}
+    orbital_counts.update(aux_info)
+    output.update(orbital_counts)
+
+    return output
