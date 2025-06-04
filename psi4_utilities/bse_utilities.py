@@ -13,8 +13,8 @@ def count_functions(basis_data):
     """Counts basis functions based on angular momentum.
     Input 
     
-    orbital_basis = bse.get_basis('cc-pVDZ', elements=[element_Z], fmt='python', optimize_general=True)
-    aux_basis = bse.get_basis('cc-pVDZ-JKFIT', elements=[element_Z], fmt='python', optimize_general=True)
+    orbital_basis = bse.get_basis('cc-pVDZ', elements=[element_Z], fmt='psi4', optimize_general=True)
+    aux_basis = bse.get_basis('cc-pVDZ-JKFIT', elements=[element_Z], fmt='psi4', optimize_general=True)
     """
     count = 0
     for element_data in basis_data['elements'].values():
