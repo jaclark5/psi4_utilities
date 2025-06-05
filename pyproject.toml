@@ -25,6 +25,7 @@ dependencies = [
     "numpy",
     "psi4",
     "basis_set_exchange",
+    "periodictable",
 ]
 
 # Update the urls once the hosting is set up.
