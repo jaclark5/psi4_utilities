@@ -718,4 +718,5 @@ def get_memory(
     else:
         phase3_memory = 0
 
-    return max(phase1_memory, phase2_memory, phase3_memory)
+    memory_breakdown["peak_memory"] = max(phase1_memory, phase2_memory, phase3_memory)
+    return memory_breakdown
