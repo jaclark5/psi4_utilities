@@ -46,7 +46,7 @@ DFT_GLOBAL_HYBRID_METHODS = [
 ]
 DFT_RANGE_SEPARATED_METHODS = [
     "wb97", "wb97x", "wb97xd", "wb97x3c", "wb97x2lp", "wb97x2tqz",
-    "wblyp", "wpbe", "wpbesol", "wpbe0"
+    "wblyp", "wpbe", "wpbesol", "wpbe0", "wb97mv",
 ]
 DFT_METAGGA_METHODS = [
     "m05", "m052x", "m052xd3", "m05d3",
@@ -124,8 +124,8 @@ def get_core_memory(nbasis, nmo, reference):
     reference = reference.upper()
     memory_breakdown = {}
 
-    orbital_factor = 2 if reference in ["UKS", "UHF", "CUHF"] else 1
-    dens_fock_factor = 1 if reference in ["RKS", "RHF"] else 2
+    orbital_factor = 2 if reference in ["UKS", "UHF", "CUHF", "ROHF"] else 1
+    dens_fock_factor = 1 if reference in ["RKS", "RHF", "ROHF"] else 2
 
     memory_breakdown["orbital"] = nbasis * nmo * SIZE * orbital_factor
     memory_breakdown["density_matrices"] = nbasis**2 * SIZE * dens_fock_factor
@@ -242,20 +242,20 @@ def get_integral_memory(
         )
 
     temp_matrices = nbasis**2 * SIZE * spin_factor  # G matrix construction workspace
-    temp_matrices += nbasis**2 * SIZE * 3  # DIAG + residuals + temp
+    temp_matrices += nbasis * nmo * SIZE * spin_factor
 
     if int_type in ["pk", "conv"]:
         # Full integrals stored in memory (nbasis⁴ scaling)
         integral_memory = nbasis**4 * SIZE
-        temp_matrices += nbasis * nmo * SIZE * 2  # Orbital transformations
-        temp_matrices += nbasis**2 * spin_factor * SIZE  # Build buffers
+        temp_matrices += 3 * nbasis**2 * SIZE  # Fock, density, scratch
+        temp_matrices += nbasis * nmo * SIZE * spin_factor
     elif int_type == "df":
         # Density fitting reduces memory usage (nbasis² × naux scaling)
         if naux is None:
             raise ValueError("The number of auxiliary functions is required.")
         integral_memory = nbasis**2 * naux * SIZE
         temp_matrices += naux**2 * SIZE  #  (P|Q) Metric matrix
-        temp_matrices += nbasis**2 * naux * SIZE  # 3-index intermediates
+        temp_matrices += nbasis * naux * SIZE  # fitting buffer
         temp_matrices += naux * nmo * SIZE * spin_factor  # MO transformed 3-index
     elif int_type == "cd":
         # Cholesky decomposition reduces memory usage (nbasis² × ncholesky scaling)
@@ -266,15 +266,13 @@ def get_integral_memory(
         temp_matrices += ncholesky**2 * SIZE  # (L|L) metric approx.
     elif int_type == "out_of_core":
         # Minimal memory for integrals, stored on disk
-        integral_memory = buffer_size * SIZE * 2  # I/O buffers only
+        integral_memory = buffer_size * SIZE  # I/O buffers only
         # Out-of-core: needs I/O buffers
-        temp_matrices += buffer_size * SIZE * 2  # I/O buffering
         temp_matrices += nbasis**2 * SIZE  # Accumulation arrays
     elif int_type == "direct":
         # On-the-fly computation, no integrals stored
         integral_memory = 0  # Assume no memory for integrals
-        temp_matrices += nbasis**2 * SIZE * 4  # G matrix + AO batch buffers
-        temp_matrices += nbasis * nmo * SIZE * 2  # MO transformation buffer
+        temp_matrices += nbasis**2 * SIZE * 2  # MO transformation buffer
     else:
         raise ValueError(f"Unsupported int_type: {int_type}")
 
@@ -333,9 +331,9 @@ def get_memory(nbasis, nmo, reference, method, naux=None, int_type="df"):
     # Take X2C relativistic into account
     if psi4.core.get_option("SCF", "RELATIVISTIC") == "X2C":
         memory_breakdown["use_x2c"] = True
-        memory_breakdown["diis_memory"] *= 3
-        memory_breakdown["integral_memory"] *= 2
-        memory_breakdown["temporary_memory"] *= 2.5
+        memory_breakdown["diis_memory"] *= 1.5
+        memory_breakdown["integral_memory"] *= 1.5
+        memory_breakdown["temporary_memory"] *= 1.5
     else:
         memory_breakdown["use_x2c"] = False
 
