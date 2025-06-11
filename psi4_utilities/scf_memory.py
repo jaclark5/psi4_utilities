@@ -313,6 +313,7 @@ def get_memory(nbasis, nmo, reference, method, naux=None, int_type="df"):
         - If X2C is enabled, multiply core_memory, integral_memory, and temporary_memory by 3, 2, and 2.5 respectively.
     """
     reference = reference.upper()
+    method = method.lower().replace("-", "").replace("_", "").replace("(", "").replace(")", "")
 
     # Get contributions
     memory_breakdown = get_core_memory(nbasis, nmo, reference)
@@ -321,7 +322,6 @@ def get_memory(nbasis, nmo, reference, method, naux=None, int_type="df"):
         get_integral_memory(nbasis, reference, nmo=nmo, naux=naux, int_type=int_type)
     )
     
-    method = method.lower().replace("-", "").replace("_", "").replace("(", "").replace(")", "")
     if method in DFT_METHODS:
         dft_factor = dft_memory_factor(method)
     else:

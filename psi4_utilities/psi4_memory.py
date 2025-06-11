@@ -1,6 +1,7 @@
 import warnings
 import os
 import glob
+import re
 
 import numpy as np
 from qcelemental.models import Molecule
@@ -9,6 +10,7 @@ import psi4
 import psi4_utilities.scf_memory as mscf
 import psi4_utilities.mp2_memory as mmp2
 import psi4_utilities.cc_memory as mcc
+import psi4_utilities.mr_memory as mmr
 
 BYTES = 8
 CONVERSION = 1 / 1000**3  # From bytes to GB
@@ -37,6 +39,8 @@ def get_calculation_type(method):
         return "MP2"
     elif method.lower() in mcc.METHODS:
         return "CC"
+    elif method.lower() in mmr.METHODS:
+        return mmr._CALCULATION_TYPE[method]
     else:
         raise ValueError(
             f"The method, {method}, is not recognized. Consider adding this option to `get_calculation_type`"
@@ -83,8 +87,7 @@ def get_auxiliary_basis_size(
             key = "DF_BASIS_CC"
             fitrole = "RIFIT"
         else:
-            key = "DF_BASIS_SCF"  # Default to SCF for unknown types
-            fitrole = "JKFIT"
+            key, fitrole = mmr._AUX_BASIS_ROLES[method]
     else:
         result["naux"] = 0
         result["aux_basis_used"] = "None"
@@ -116,7 +119,8 @@ def get_orbital_counts(
     freeze_core=False,
     use_wfn=False,
     method=None,
-    int_type=None
+    int_type=None,
+    psi4_options={},
 ):
     """Computes and returns the number of molecular orbitals (MOs), alpha and beta electrons,
     frozen core orbitals, total occupied orbitals, correlated occupied orbitals, and virtual orbitals
@@ -132,6 +136,8 @@ def get_orbital_counts(
         use_wfn (bool, optional): Choose whether to use the wave function or not
         method (str, optional): Method used to classify the calculation type. Defaults to None
         int_type (str, optional): Type of method (e.g., 'DF', 'CD', etc.). If None, will use the Psi4 default
+        psi4_options (dict, optional): Input for ``psi4.set_options(psi4_options)``. Note that the options are cleared
+        in this function, so all options used in other functions should be provided.
 
     Returns
     -------
@@ -149,13 +155,14 @@ def get_orbital_counts(
 
     """
 
-    method = method.lower().replace("-", "").replace("_", "").replace("(", "").replace(")", "")
+    method = method.lower().replace("-", "").replace("_", "")
     
     options = {
         "reference": reference,
         "freeze_core": freeze_core,
         "PRINT": 5,
     }  # add 'num_frozen_docc': 2?
+    options.update(psi4_options)
 
     flag_3c = method[-2:].lower() == "3c"
     if not flag_3c:
@@ -276,6 +283,7 @@ def memory_from_psi4(
     freeze_core=False,
     use_wfn=False,
     reference=None,
+    psi4_options={},
 ):
     """Calculate the maximum memory required for a Psi4 calculation.
 
@@ -294,14 +302,23 @@ def memory_from_psi4(
         and -3, the user might request strict freezing of the previous first/second/third noble gas shell on every
         atom. In this case, when there are no valence electrons, the code raises an exception. Defaults to False.
         use_wfn (bool, optional): Choose whether to use the wave function or not
-        reference (str, optional): Raference wavefunction (RHF, ROHF, UKS...)
+        reference (str, optional): Raference wavefunction (RHF, ROHF, UKS...), this will be added to the psi4 options,
+        but overwritten by ``psi4_options``.
+        psi4_options (dict, optional): Input for ``psi4.set_options(psi4_options)``. Note that the options are cleared
+        in this function, so all options used in other functions should be provided.
 
     Returns
     -------
         float: Estimated memory in GB.
     """
 
-    method = method.lower().replace("-", "").replace("_", "").replace("(", "").replace(")", "")
+    match = re.match(r"(\w+)\((\d+),\s*(\d+)\)", method)
+    if match:
+        method = method.lower().replace("-", "").replace("_", "").split("(")[0]
+        n_act_spin_electrons, n_orbitals = int(match.group(2)), int(match.group(3))
+    else:
+        method = method.lower().replace("-", "").replace("_", "").replace("(", "").replace(")", "")
+        n_act_spin_electrons, n_orbitals = None, None
 
     flag_3c = True if method[-2:].lower() == "3c" else False
     if not flag_3c and (basis is None or basis == "None"):
@@ -311,16 +328,11 @@ def memory_from_psi4(
         psi4.geometry(mol.to_string(dtype="psi4")) if isinstance(mol, Molecule) else mol
     )
 
-    calc_type = get_calculation_type(method)
     if reference is None:
-        if (
-            calc_type == "CC"
-            or calc_type == "MP2"
-            or method.lower() not in mscf.DFT_METHODS
-        ):
-            reference = "rhf" if psi4_mol.multiplicity() == 1 else "rohf"
-        else:  # DFT Method
+        if method in mscf.DFT_METHODS:
             reference = "rks" if psi4_mol.multiplicity() == 1 else "uks"
+        else:
+            reference = "rhf" if psi4_mol.multiplicity() == 1 else "rohf"
 
     int_type = scf_type if scf_type is not None else mp2_type
     int_type = int_type if int_type is not None else cc_type
@@ -331,10 +343,11 @@ def memory_from_psi4(
         freeze_core=freeze_core,
         use_wfn=use_wfn,
         method=method,
-        int_type=int_type
+        int_type=int_type,
+        psi4_options=psi4_options,
     )
 
-    if method.lower() in mscf.METHODS:
+    if method in mscf.METHODS:
         memory_breakdown = mscf.get_memory(
             orbital_counts["nbasis"],
             orbital_counts["nmo"],
@@ -343,7 +356,7 @@ def memory_from_psi4(
             int_type=scf_type,
             naux=orbital_counts["naux"],
         )
-    elif method.lower() in mmp2.METHODS:
+    elif method in mmp2.METHODS:
         memory_breakdown = mmp2.get_memory(
             orbital_counts["nbasis"],
             orbital_counts["nmo"],
@@ -356,7 +369,7 @@ def memory_from_psi4(
             naux=orbital_counts["naux"],
             int_type=mp2_type,
         )
-    elif method.lower() in mcc.METHODS:
+    elif method in mcc.METHODS:
         memory_breakdown = mcc.get_memory(
             orbital_counts["nbasis"],
             orbital_counts["nmo"],
@@ -368,6 +381,18 @@ def memory_from_psi4(
             nbeta=orbital_counts["nbeta"],
             naux=orbital_counts["naux"],
             int_type=mp2_type,
+        )
+    elif method in mmr.METHODS:
+        memory_breakdown = mmr.get_memory(
+            orbital_counts["nbasis"],
+            orbital_counts["nmo"],
+            orbital_counts["ncore"],
+            reference,
+            method,
+            int_type=scf_type,
+            naux=orbital_counts["naux"],
+            n_act_spin_electrons=n_act_spin_electrons,
+            n_orbitals=n_orbitals,
         )
     else:
         raise ValueError(f"Unsupported method '{method}'.")
