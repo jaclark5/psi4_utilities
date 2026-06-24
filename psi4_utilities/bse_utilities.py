@@ -1,22 +1,46 @@
-"""Provide useful function for dealing with basis set exchange."""
+"""Query and retrieve basis sets from Basis Set Exchange (BSE).
+
+This module provides utilities for searching and filtering basis sets available
+in the Basis Set Exchange, including finding auxiliary basis sets and retrieving
+basis sets that support specific elements.
+
+Usage
+-----
+**Find auxiliary basis sets for an orbital basis:**
+    >>> from psi4_utilities.bse_utilities import find_aux_sets
+    >>> aux_sets = find_aux_sets("cc-pVTZ")
+    >>> print(aux_sets)
+    ['cc-pVTZ-jkfit', 'cc-pVTZ-ri', 'cc-pVTZ-cabs']
+
+**Get all basis sets supporting specific elements:**
+    >>> from psi4_utilities.bse_utilities import get_basis_sets
+    >>> basis_sets = get_basis_sets(elements=["C", "H", "O"])
+    >>> basis_sets = get_basis_sets(elements=[6, 1, 8])  # Also accepts atomic numbers
+
+Functions
+---------
+    - `find_aux_sets`: Find auxiliary basis sets matching an orbital basis prefix.
+    - `get_basis_sets`: Retrieve all basis sets that support a given set of elements.
+"""
 
 import basis_set_exchange as bse
 from periodictable import elements as pt_elements
 
 def find_aux_sets(orbital_basis_prefix):
-    """Finds and returns auxiliary basis sets matching a given orbital basis prefix.
+    """Find auxiliary basis sets matching an orbital basis prefix.
 
-    This function searches through all available basis set names from the Basis Set Exchange (BSE)
-    and returns those that contain the specified orbital basis prefix and are identified as auxiliary
-    sets (e.g., those containing 'jkfit', 'mp2fit', 'ri', or 'cabs' in their names).
+    Searches the Basis Set Exchange for auxiliary basis sets (jkfit, mp2fit, ri, cabs)
+    that correspond to a given orbital basis prefix.
 
     Parameters
     ----------
-        orbital_basis_prefix (str): The prefix of the orbital basis set to search for.
+    orbital_basis_prefix : str
+        The prefix of the orbital basis set (e.g., "cc-pVTZ").
 
     Returns
     -------
-        list[str]: A list of auxiliary basis set names matching the given prefix.
+    list[str]
+        Auxiliary basis set names containing the prefix and auxiliary set keywords.
     """
     orbital_basis_prefix = orbital_basis_prefix.lower()
     all_bases = bse.get_all_basis_names()
@@ -26,23 +50,29 @@ def find_aux_sets(orbital_basis_prefix):
 
 
 def get_basis_sets(elements=None):
-    """Get a list of basis sets on basis set exchange that support a set of elements.
+    """Retrieve all basis sets that support a given set of elements.
+
+    Filters basis sets from the Basis Set Exchange, excluding fitting sets,
+    and returns only those that support all specified elements.
 
     Parameters
     ----------
-        elements (list, optional): A list of either atomic numbers (int) or symbols. Defaults to None.
-        
+    elements : list, optional
+        A list of atomic numbers (int) or element symbols (str).
+        If None, returns all available basis sets. Default is None.
+
     Returns
     -------
-        basis_sets (list): List of basis set names.
+    list[str]
+        Basis set names that support all specified elements.
     """
     kwargs = {}
     if elements is not None:
         if all(isinstance(elem, str) and elem.isalpha() for elem in elements):
             atomic_nums = [pt_elements.symbol(elem).number for elem in elements]
         else:
-            atomic_nums = [int(x) for x in atomic_nums]
-    kwargs["elements"] = atomic_nums
+            atomic_nums = [int(x) for x in elements]
+        kwargs["elements"] = atomic_nums
 
     supported_basis_sets = []
     for basis_name in bse.get_all_basis_names():

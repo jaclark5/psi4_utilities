@@ -1,8 +1,27 @@
-"""This module will split a basis set into the base and augmented parts.
+"""Separate augmented basis set primitives from a full basis set.
 
-The full and base basis sets must be available in basis set exchange.
+This module downloads basis set definitions from the Basis Set Exchange (BSE),
+compares a full basis set with a base basis set, and extracts only the additional
+primitives in the full set. Output files are saved in Psi4 .gbs format.
 
-Note that the script ``psi4/share/psi4/basis/primitives/diff_gbs.py`` can be used to compare two .gbs files more effectively.
+Usage
+-----
+**In Python:**
+    >>> from psi4_utilities.separate_basis_set import separate_basis_functions
+    >>> separate_basis_functions("aug-cc-pVTZ", "cc-pVTZ", path="./basis_sets")
+    # Creates: aug-cc-pVTZ.gbs, cc-pVTZ.gbs, stripped-aug-cc-pVTZ.gbs
+
+**From command line:**
+    $ python -m psi4_utilities.separate_basis_set aug-cc-pVTZ cc-pVTZ
+    # Creates files in current directory
+
+Functions
+---------
+    - `separate_basis_functions`: Main entry point; compares two basis sets and saves results.
+    - `get_basis_set_file`: Download a single basis set from BSE and save to file.
+    - `get_basis_set_dict`: Parse a basis set string into a nested dictionary structure.
+    - `subtract_dict_contents`: Extract primitives in full set but not in base set.
+    - `form_basis_set_file`: Serialize a basis set dictionary back to .gbs format.
 """
 
 import os
@@ -12,11 +31,14 @@ from collections import defaultdict
 import basis_set_exchange as bse
 
 def get_basis_set_file(basis_set, path="."):
-    """Get basis set from Basis Set Exchange and save to a file
+    """Download a basis set from BSE and save to a .gbs file.
 
-    Args:
-        basis_set (str): Name of basis set from Basis Set Exchange
-        path (str, optional): Path to which to save the file, DO NOT INCLUDE FILENAME. Defaults to ".".
+    Parameters
+    ----------
+    basis_set : str
+        Name of the basis set in Basis Set Exchange.
+    path : str, optional
+        Directory path for output (no filename). Default is current directory.
     """
     
     data = bse.get_basis(basis_set, fmt='psi4', header=True, optimize_general=True)
@@ -26,17 +48,28 @@ def get_basis_set_file(basis_set, path="."):
 
 
 def subtract_dict_contents(full_dict, base_dict):
-    """Return a dictionary of the uncommon entries between two inputs.
+    """Extract basis set primitives in full_dict but not in base_dict.
 
-    Args:
-        full_dict (dict): Dictionary that is the same as ``base_dict`` plus additional values
-        base_dict (dict): The base dictionary for comparison
+    Compares nested dictionaries of basis set primitives and returns only the
+    entries (elements and their primitive shells) that appear in full_dict but
+    not in base_dict.
 
-    Raises:
-        ValueError: If the ``base_dict`` contains values not present in ``full_dict`` an error is raised.
+    Parameters
+    ----------
+    full_dict : dict
+        Complete basis set dictionary with all primitives.
+    base_dict : dict
+        Base basis set dictionary; assumed to be a subset of full_dict.
 
-    Returns:
-        dict: Dictionary of uncommon values added to the dictionary
+    Returns
+    -------
+    dict
+        Dictionary containing only the primitives in full_dict that are absent in base_dict.
+
+    Raises
+    ------
+    ValueError
+        If base_dict contains elements or primitives not present in full_dict.
     """
     new_dict = {}
 
@@ -69,7 +102,24 @@ def subtract_dict_contents(full_dict, base_dict):
 
 
 def get_basis_set_dict(basis_set_data):
-    
+    """Parse a basis set string into a nested dictionary structure.
+
+    Converts a Psi4 .gbs format basis set string into a nested dictionary
+    keyed by element, with shells and their primitive exponent–coefficient pairs.
+
+    Parameters
+    ----------
+    basis_set_data : str
+        Basis set data in Psi4 .gbs format.
+
+    Returns
+    -------
+    dict
+        Dictionary mapping element symbols to [Z, shells], where shells is a list
+        of [shell_info, primitives] pairs.
+    list
+        Header lines preceding the basis set data.
+    """
     basis_set_dict = defaultdict(list)
     flag_start = False
     flag_restart = False
@@ -102,13 +152,18 @@ def get_basis_set_dict(basis_set_data):
 
 
 def form_basis_set_file(basis_set_dict):
-    """Create an output string of a file from a basis set dictionary
+    """Serialize a basis set dictionary to Psi4 .gbs format string.
 
-    Args:
-        basis_set_dict (dict[list]): Dictionary of each element and the basis function primitives that make it up.
+    Parameters
+    ----------
+    basis_set_dict : dict
+        Dictionary mapping element symbols to [Z, shells] pairs, where shells
+        contain [shell_info, primitives] pairs.
 
-    Returns:
-        str: String of .gbs file to be save to a file.
+    Returns
+    -------
+    str
+        Basis set data formatted as a Psi4 .gbs file string.
     """
 
     file_data = []
@@ -130,12 +185,19 @@ def form_basis_set_file(basis_set_dict):
 
 
 def separate_basis_functions(full_basis_set, base_basis_set, path="."):
-    """Download a full basis set and it's base to separate additional terms.
+    """Download two basis sets, extract the difference, and save all three.
 
-    Args:
-        full_basis_set (str): Name of basis set from Basis Set Exchange.
-        base_basis_set (str): Name of basis set from Basis Set Exchange.
-        path (str, optional): Path to which to save the file, DO NOT INCLUDE FILENAME. Defaults to ".".
+    Downloads a full basis set and base basis set from BSE, computes the difference,
+    and saves three .gbs files: base, full, and augmented (difference).
+
+    Parameters
+    ----------
+    full_basis_set : str
+        Name of the complete basis set in Basis Set Exchange.
+    base_basis_set : str
+        Name of the base basis set in Basis Set Exchange (must be a subset of full).
+    path : str, optional
+        Directory path for output files (no filename). Default is current directory.
     """
     
     # Save starting basis set files
