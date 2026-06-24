@@ -14,7 +14,7 @@ Query and filter basis sets from the [Basis Set Exchange](https://www.basissetex
 Find auxiliary basis sets corresponding to orbital basis prefixes.
 
 **Use case examples**: See module docstring in [`bse_utilities.py`](psi4_utilities/bse_utilities.py)  
-**Tests**: [`test_psi4_utilities.py`](psi4_utilities/tests/test_psi4_utilities.py)
+**Tests**: [`test_psi4_utilities.py`](psi4_utilities/test_bse_utilities.ipynb)
 
 ### 2. Basis Set File Operations (`separate_basis_set.py`)
 Download basis sets from BSE, extract augmented/diffuse primitives, and save in Psi4 .gbs format.
